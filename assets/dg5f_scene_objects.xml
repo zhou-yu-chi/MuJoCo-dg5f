@@ -1,0 +1,16 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  Stage-2 combined scene: the hand (dg5f_scene.xml) plus all 5 YCB test
+  objects, laid out in a row so each one is visible without overlapping.
+  Objects start above the floor and free-fall onto it -- this is just a
+  "does everything load and settle without exploding" check, not a grasp
+  attempt (that's stage 3).
+-->
+<mujoco model="dg5f_with_objects">
+  <include file="dg5f_scene.xml" />
+  <include file="objects/002_master_chef_can/object.xml" />
+  <include file="objects/003_cracker_box/object.xml" />
+  <include file="objects/011_banana/object.xml" />
+  <include file="objects/025_mug/object.xml" />
+  <include file="objects/065-a_cups/object.xml" />
+</mujoco>

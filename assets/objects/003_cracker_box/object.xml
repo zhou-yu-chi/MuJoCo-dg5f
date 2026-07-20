@@ -1,0 +1,75 @@
+<mujoco>
+  <asset>
+    <mesh name="003_cracker_box_visual" file="objects/003_cracker_box/visual.stl" />
+    <mesh name="003_cracker_box_col_00" file="objects/003_cracker_box/collision/003_cracker_box_00.stl" />
+    <mesh name="003_cracker_box_col_01" file="objects/003_cracker_box/collision/003_cracker_box_01.stl" />
+    <mesh name="003_cracker_box_col_02" file="objects/003_cracker_box/collision/003_cracker_box_02.stl" />
+    <mesh name="003_cracker_box_col_03" file="objects/003_cracker_box/collision/003_cracker_box_03.stl" />
+    <mesh name="003_cracker_box_col_04" file="objects/003_cracker_box/collision/003_cracker_box_04.stl" />
+    <mesh name="003_cracker_box_col_05" file="objects/003_cracker_box/collision/003_cracker_box_05.stl" />
+    <mesh name="003_cracker_box_col_06" file="objects/003_cracker_box/collision/003_cracker_box_06.stl" />
+    <mesh name="003_cracker_box_col_07" file="objects/003_cracker_box/collision/003_cracker_box_07.stl" />
+    <mesh name="003_cracker_box_col_08" file="objects/003_cracker_box/collision/003_cracker_box_08.stl" />
+    <mesh name="003_cracker_box_col_09" file="objects/003_cracker_box/collision/003_cracker_box_09.stl" />
+    <mesh name="003_cracker_box_col_10" file="objects/003_cracker_box/collision/003_cracker_box_10.stl" />
+    <mesh name="003_cracker_box_col_11" file="objects/003_cracker_box/collision/003_cracker_box_11.stl" />
+    <mesh name="003_cracker_box_col_12" file="objects/003_cracker_box/collision/003_cracker_box_12.stl" />
+    <mesh name="003_cracker_box_col_13" file="objects/003_cracker_box/collision/003_cracker_box_13.stl" />
+    <mesh name="003_cracker_box_col_14" file="objects/003_cracker_box/collision/003_cracker_box_14.stl" />
+    <mesh name="003_cracker_box_col_15" file="objects/003_cracker_box/collision/003_cracker_box_15.stl" />
+    <mesh name="003_cracker_box_col_16" file="objects/003_cracker_box/collision/003_cracker_box_16.stl" />
+    <mesh name="003_cracker_box_col_17" file="objects/003_cracker_box/collision/003_cracker_box_17.stl" />
+    <mesh name="003_cracker_box_col_18" file="objects/003_cracker_box/collision/003_cracker_box_18.stl" />
+    <mesh name="003_cracker_box_col_19" file="objects/003_cracker_box/collision/003_cracker_box_19.stl" />
+    <mesh name="003_cracker_box_col_20" file="objects/003_cracker_box/collision/003_cracker_box_20.stl" />
+    <mesh name="003_cracker_box_col_21" file="objects/003_cracker_box/collision/003_cracker_box_21.stl" />
+    <mesh name="003_cracker_box_col_22" file="objects/003_cracker_box/collision/003_cracker_box_22.stl" />
+    <mesh name="003_cracker_box_col_23" file="objects/003_cracker_box/collision/003_cracker_box_23.stl" />
+    <mesh name="003_cracker_box_col_24" file="objects/003_cracker_box/collision/003_cracker_box_24.stl" />
+    <mesh name="003_cracker_box_col_25" file="objects/003_cracker_box/collision/003_cracker_box_25.stl" />
+    <mesh name="003_cracker_box_col_26" file="objects/003_cracker_box/collision/003_cracker_box_26.stl" />
+    <mesh name="003_cracker_box_col_27" file="objects/003_cracker_box/collision/003_cracker_box_27.stl" />
+    <mesh name="003_cracker_box_col_28" file="objects/003_cracker_box/collision/003_cracker_box_28.stl" />
+    <mesh name="003_cracker_box_col_29" file="objects/003_cracker_box/collision/003_cracker_box_29.stl" />
+    <mesh name="003_cracker_box_col_30" file="objects/003_cracker_box/collision/003_cracker_box_30.stl" />
+    <mesh name="003_cracker_box_col_31" file="objects/003_cracker_box/collision/003_cracker_box_31.stl" />
+  </asset>
+  <worldbody>
+    <body name="003_cracker_box" pos="0 0 0.5">
+      <freejoint name="003_cracker_box_free" />
+      <geom type="mesh" mesh="003_cracker_box_visual" contype="0" conaffinity="0" group="2" rgba="0.8 0.8 0.75 1" />
+      <geom type="mesh" mesh="003_cracker_box_col_00" group="3" condim="4" friction="0.8 0.01 0.001" density="1000" solref="0.005 1" solimp="0.9 0.98 0.001" />
+      <geom type="mesh" mesh="003_cracker_box_col_01" group="3" condim="4" friction="0.8 0.01 0.001" density="1000" solref="0.005 1" solimp="0.9 0.98 0.001" />
+      <geom type="mesh" mesh="003_cracker_box_col_02" group="3" condim="4" friction="0.8 0.01 0.001" density="1000" solref="0.005 1" solimp="0.9 0.98 0.001" />
+      <geom type="mesh" mesh="003_cracker_box_col_03" group="3" condim="4" friction="0.8 0.01 0.001" density="1000" solref="0.005 1" solimp="0.9 0.98 0.001" />
+      <geom type="mesh" mesh="003_cracker_box_col_04" group="3" condim="4" friction="0.8 0.01 0.001" density="1000" solref="0.005 1" solimp="0.9 0.98 0.001" />
+      <geom type="mesh" mesh="003_cracker_box_col_05" group="3" condim="4" friction="0.8 0.01 0.001" density="1000" solref="0.005 1" solimp="0.9 0.98 0.001" />
+      <geom type="mesh" mesh="003_cracker_box_col_06" group="3" condim="4" friction="0.8 0.01 0.001" density="1000" solref="0.005 1" solimp="0.9 0.98 0.001" />
+      <geom type="mesh" mesh="003_cracker_box_col_07" group="3" condim="4" friction="0.8 0.01 0.001" density="1000" solref="0.005 1" solimp="0.9 0.98 0.001" />
+      <geom type="mesh" mesh="003_cracker_box_col_08" group="3" condim="4" friction="0.8 0.01 0.001" density="1000" solref="0.005 1" solimp="0.9 0.98 0.001" />
+      <geom type="mesh" mesh="003_cracker_box_col_09" group="3" condim="4" friction="0.8 0.01 0.001" density="1000" solref="0.005 1" solimp="0.9 0.98 0.001" />
+      <geom type="mesh" mesh="003_cracker_box_col_10" group="3" condim="4" friction="0.8 0.01 0.001" density="1000" solref="0.005 1" solimp="0.9 0.98 0.001" />
+      <geom type="mesh" mesh="003_cracker_box_col_11" group="3" condim="4" friction="0.8 0.01 0.001" density="1000" solref="0.005 1" solimp="0.9 0.98 0.001" />
+      <geom type="mesh" mesh="003_cracker_box_col_12" group="3" condim="4" friction="0.8 0.01 0.001" density="1000" solref="0.005 1" solimp="0.9 0.98 0.001" />
+      <geom type="mesh" mesh="003_cracker_box_col_13" group="3" condim="4" friction="0.8 0.01 0.001" density="1000" solref="0.005 1" solimp="0.9 0.98 0.001" />
+      <geom type="mesh" mesh="003_cracker_box_col_14" group="3" condim="4" friction="0.8 0.01 0.001" density="1000" solref="0.005 1" solimp="0.9 0.98 0.001" />
+      <geom type="mesh" mesh="003_cracker_box_col_15" group="3" condim="4" friction="0.8 0.01 0.001" density="1000" solref="0.005 1" solimp="0.9 0.98 0.001" />
+      <geom type="mesh" mesh="003_cracker_box_col_16" group="3" condim="4" friction="0.8 0.01 0.001" density="1000" solref="0.005 1" solimp="0.9 0.98 0.001" />
+      <geom type="mesh" mesh="003_cracker_box_col_17" group="3" condim="4" friction="0.8 0.01 0.001" density="1000" solref="0.005 1" solimp="0.9 0.98 0.001" />
+      <geom type="mesh" mesh="003_cracker_box_col_18" group="3" condim="4" friction="0.8 0.01 0.001" density="1000" solref="0.005 1" solimp="0.9 0.98 0.001" />
+      <geom type="mesh" mesh="003_cracker_box_col_19" group="3" condim="4" friction="0.8 0.01 0.001" density="1000" solref="0.005 1" solimp="0.9 0.98 0.001" />
+      <geom type="mesh" mesh="003_cracker_box_col_20" group="3" condim="4" friction="0.8 0.01 0.001" density="1000" solref="0.005 1" solimp="0.9 0.98 0.001" />
+      <geom type="mesh" mesh="003_cracker_box_col_21" group="3" condim="4" friction="0.8 0.01 0.001" density="1000" solref="0.005 1" solimp="0.9 0.98 0.001" />
+      <geom type="mesh" mesh="003_cracker_box_col_22" group="3" condim="4" friction="0.8 0.01 0.001" density="1000" solref="0.005 1" solimp="0.9 0.98 0.001" />
+      <geom type="mesh" mesh="003_cracker_box_col_23" group="3" condim="4" friction="0.8 0.01 0.001" density="1000" solref="0.005 1" solimp="0.9 0.98 0.001" />
+      <geom type="mesh" mesh="003_cracker_box_col_24" group="3" condim="4" friction="0.8 0.01 0.001" density="1000" solref="0.005 1" solimp="0.9 0.98 0.001" />
+      <geom type="mesh" mesh="003_cracker_box_col_25" group="3" condim="4" friction="0.8 0.01 0.001" density="1000" solref="0.005 1" solimp="0.9 0.98 0.001" />
+      <geom type="mesh" mesh="003_cracker_box_col_26" group="3" condim="4" friction="0.8 0.01 0.001" density="1000" solref="0.005 1" solimp="0.9 0.98 0.001" />
+      <geom type="mesh" mesh="003_cracker_box_col_27" group="3" condim="4" friction="0.8 0.01 0.001" density="1000" solref="0.005 1" solimp="0.9 0.98 0.001" />
+      <geom type="mesh" mesh="003_cracker_box_col_28" group="3" condim="4" friction="0.8 0.01 0.001" density="1000" solref="0.005 1" solimp="0.9 0.98 0.001" />
+      <geom type="mesh" mesh="003_cracker_box_col_29" group="3" condim="4" friction="0.8 0.01 0.001" density="1000" solref="0.005 1" solimp="0.9 0.98 0.001" />
+      <geom type="mesh" mesh="003_cracker_box_col_30" group="3" condim="4" friction="0.8 0.01 0.001" density="1000" solref="0.005 1" solimp="0.9 0.98 0.001" />
+      <geom type="mesh" mesh="003_cracker_box_col_31" group="3" condim="4" friction="0.8 0.01 0.001" density="1000" solref="0.005 1" solimp="0.9 0.98 0.001" />
+    </body>
+  </worldbody>
+</mujoco>

@@ -1,0 +1,75 @@
+<mujoco>
+  <asset>
+    <mesh name="011_banana_visual" file="objects/011_banana/visual.stl" />
+    <mesh name="011_banana_col_00" file="objects/011_banana/collision/011_banana_00.stl" />
+    <mesh name="011_banana_col_01" file="objects/011_banana/collision/011_banana_01.stl" />
+    <mesh name="011_banana_col_02" file="objects/011_banana/collision/011_banana_02.stl" />
+    <mesh name="011_banana_col_03" file="objects/011_banana/collision/011_banana_03.stl" />
+    <mesh name="011_banana_col_04" file="objects/011_banana/collision/011_banana_04.stl" />
+    <mesh name="011_banana_col_05" file="objects/011_banana/collision/011_banana_05.stl" />
+    <mesh name="011_banana_col_06" file="objects/011_banana/collision/011_banana_06.stl" />
+    <mesh name="011_banana_col_07" file="objects/011_banana/collision/011_banana_07.stl" />
+    <mesh name="011_banana_col_08" file="objects/011_banana/collision/011_banana_08.stl" />
+    <mesh name="011_banana_col_09" file="objects/011_banana/collision/011_banana_09.stl" />
+    <mesh name="011_banana_col_10" file="objects/011_banana/collision/011_banana_10.stl" />
+    <mesh name="011_banana_col_11" file="objects/011_banana/collision/011_banana_11.stl" />
+    <mesh name="011_banana_col_12" file="objects/011_banana/collision/011_banana_12.stl" />
+    <mesh name="011_banana_col_13" file="objects/011_banana/collision/011_banana_13.stl" />
+    <mesh name="011_banana_col_14" file="objects/011_banana/collision/011_banana_14.stl" />
+    <mesh name="011_banana_col_15" file="objects/011_banana/collision/011_banana_15.stl" />
+    <mesh name="011_banana_col_16" file="objects/011_banana/collision/011_banana_16.stl" />
+    <mesh name="011_banana_col_17" file="objects/011_banana/collision/011_banana_17.stl" />
+    <mesh name="011_banana_col_18" file="objects/011_banana/collision/011_banana_18.stl" />
+    <mesh name="011_banana_col_19" file="objects/011_banana/collision/011_banana_19.stl" />
+    <mesh name="011_banana_col_20" file="objects/011_banana/collision/011_banana_20.stl" />
+    <mesh name="011_banana_col_21" file="objects/011_banana/collision/011_banana_21.stl" />
+    <mesh name="011_banana_col_22" file="objects/011_banana/collision/011_banana_22.stl" />
+    <mesh name="011_banana_col_23" file="objects/011_banana/collision/011_banana_23.stl" />
+    <mesh name="011_banana_col_24" file="objects/011_banana/collision/011_banana_24.stl" />
+    <mesh name="011_banana_col_25" file="objects/011_banana/collision/011_banana_25.stl" />
+    <mesh name="011_banana_col_26" file="objects/011_banana/collision/011_banana_26.stl" />
+    <mesh name="011_banana_col_27" file="objects/011_banana/collision/011_banana_27.stl" />
+    <mesh name="011_banana_col_28" file="objects/011_banana/collision/011_banana_28.stl" />
+    <mesh name="011_banana_col_29" file="objects/011_banana/collision/011_banana_29.stl" />
+    <mesh name="011_banana_col_30" file="objects/011_banana/collision/011_banana_30.stl" />
+    <mesh name="011_banana_col_31" file="objects/011_banana/collision/011_banana_31.stl" />
+  </asset>
+  <worldbody>
+    <body name="011_banana" pos="0 0 0.5">
+      <freejoint name="011_banana_free" />
+      <geom type="mesh" mesh="011_banana_visual" contype="0" conaffinity="0" group="2" rgba="0.8 0.8 0.75 1" />
+      <geom type="mesh" mesh="011_banana_col_00" group="3" condim="4" friction="0.8 0.01 0.001" density="1000" solref="0.005 1" solimp="0.9 0.98 0.001" />
+      <geom type="mesh" mesh="011_banana_col_01" group="3" condim="4" friction="0.8 0.01 0.001" density="1000" solref="0.005 1" solimp="0.9 0.98 0.001" />
+      <geom type="mesh" mesh="011_banana_col_02" group="3" condim="4" friction="0.8 0.01 0.001" density="1000" solref="0.005 1" solimp="0.9 0.98 0.001" />
+      <geom type="mesh" mesh="011_banana_col_03" group="3" condim="4" friction="0.8 0.01 0.001" density="1000" solref="0.005 1" solimp="0.9 0.98 0.001" />
+      <geom type="mesh" mesh="011_banana_col_04" group="3" condim="4" friction="0.8 0.01 0.001" density="1000" solref="0.005 1" solimp="0.9 0.98 0.001" />
+      <geom type="mesh" mesh="011_banana_col_05" group="3" condim="4" friction="0.8 0.01 0.001" density="1000" solref="0.005 1" solimp="0.9 0.98 0.001" />
+      <geom type="mesh" mesh="011_banana_col_06" group="3" condim="4" friction="0.8 0.01 0.001" density="1000" solref="0.005 1" solimp="0.9 0.98 0.001" />
+      <geom type="mesh" mesh="011_banana_col_07" group="3" condim="4" friction="0.8 0.01 0.001" density="1000" solref="0.005 1" solimp="0.9 0.98 0.001" />
+      <geom type="mesh" mesh="011_banana_col_08" group="3" condim="4" friction="0.8 0.01 0.001" density="1000" solref="0.005 1" solimp="0.9 0.98 0.001" />
+      <geom type="mesh" mesh="011_banana_col_09" group="3" condim="4" friction="0.8 0.01 0.001" density="1000" solref="0.005 1" solimp="0.9 0.98 0.001" />
+      <geom type="mesh" mesh="011_banana_col_10" group="3" condim="4" friction="0.8 0.01 0.001" density="1000" solref="0.005 1" solimp="0.9 0.98 0.001" />
+      <geom type="mesh" mesh="011_banana_col_11" group="3" condim="4" friction="0.8 0.01 0.001" density="1000" solref="0.005 1" solimp="0.9 0.98 0.001" />
+      <geom type="mesh" mesh="011_banana_col_12" group="3" condim="4" friction="0.8 0.01 0.001" density="1000" solref="0.005 1" solimp="0.9 0.98 0.001" />
+      <geom type="mesh" mesh="011_banana_col_13" group="3" condim="4" friction="0.8 0.01 0.001" density="1000" solref="0.005 1" solimp="0.9 0.98 0.001" />
+      <geom type="mesh" mesh="011_banana_col_14" group="3" condim="4" friction="0.8 0.01 0.001" density="1000" solref="0.005 1" solimp="0.9 0.98 0.001" />
+      <geom type="mesh" mesh="011_banana_col_15" group="3" condim="4" friction="0.8 0.01 0.001" density="1000" solref="0.005 1" solimp="0.9 0.98 0.001" />
+      <geom type="mesh" mesh="011_banana_col_16" group="3" condim="4" friction="0.8 0.01 0.001" density="1000" solref="0.005 1" solimp="0.9 0.98 0.001" />
+      <geom type="mesh" mesh="011_banana_col_17" group="3" condim="4" friction="0.8 0.01 0.001" density="1000" solref="0.005 1" solimp="0.9 0.98 0.001" />
+      <geom type="mesh" mesh="011_banana_col_18" group="3" condim="4" friction="0.8 0.01 0.001" density="1000" solref="0.005 1" solimp="0.9 0.98 0.001" />
+      <geom type="mesh" mesh="011_banana_col_19" group="3" condim="4" friction="0.8 0.01 0.001" density="1000" solref="0.005 1" solimp="0.9 0.98 0.001" />
+      <geom type="mesh" mesh="011_banana_col_20" group="3" condim="4" friction="0.8 0.01 0.001" density="1000" solref="0.005 1" solimp="0.9 0.98 0.001" />
+      <geom type="mesh" mesh="011_banana_col_21" group="3" condim="4" friction="0.8 0.01 0.001" density="1000" solref="0.005 1" solimp="0.9 0.98 0.001" />
+      <geom type="mesh" mesh="011_banana_col_22" group="3" condim="4" friction="0.8 0.01 0.001" density="1000" solref="0.005 1" solimp="0.9 0.98 0.001" />
+      <geom type="mesh" mesh="011_banana_col_23" group="3" condim="4" friction="0.8 0.01 0.001" density="1000" solref="0.005 1" solimp="0.9 0.98 0.001" />
+      <geom type="mesh" mesh="011_banana_col_24" group="3" condim="4" friction="0.8 0.01 0.001" density="1000" solref="0.005 1" solimp="0.9 0.98 0.001" />
+      <geom type="mesh" mesh="011_banana_col_25" group="3" condim="4" friction="0.8 0.01 0.001" density="1000" solref="0.005 1" solimp="0.9 0.98 0.001" />
+      <geom type="mesh" mesh="011_banana_col_26" group="3" condim="4" friction="0.8 0.01 0.001" density="1000" solref="0.005 1" solimp="0.9 0.98 0.001" />
+      <geom type="mesh" mesh="011_banana_col_27" group="3" condim="4" friction="0.8 0.01 0.001" density="1000" solref="0.005 1" solimp="0.9 0.98 0.001" />
+      <geom type="mesh" mesh="011_banana_col_28" group="3" condim="4" friction="0.8 0.01 0.001" density="1000" solref="0.005 1" solimp="0.9 0.98 0.001" />
+      <geom type="mesh" mesh="011_banana_col_29" group="3" condim="4" friction="0.8 0.01 0.001" density="1000" solref="0.005 1" solimp="0.9 0.98 0.001" />
+      <geom type="mesh" mesh="011_banana_col_30" group="3" condim="4" friction="0.8 0.01 0.001" density="1000" solref="0.005 1" solimp="0.9 0.98 0.001" />
+      <geom type="mesh" mesh="011_banana_col_31" group="3" condim="4" friction="0.8 0.01 0.001" density="1000" solref="0.005 1" solimp="0.9 0.98 0.001" />
+    </body>
+  </worldbody>
+</mujoco>

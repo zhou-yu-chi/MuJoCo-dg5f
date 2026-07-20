@@ -1,0 +1,14 @@
+# Python virtual environment
+.venv/
+__pycache__/
+*.pyc
+
+# Vendor SDK (own git history, kept local-only per project decision)
+delto_m_ros2/
+
+# Runtime artifacts
+MUJOCO_LOG.TXT
+assets/_scene_*.xml
+
+# Editor / OS cruft
+.DS_Store
