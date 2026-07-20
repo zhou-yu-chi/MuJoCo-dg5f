@@ -87,6 +87,22 @@ SUCCESS_DISP_M = 0.02
 DROP_POS = np.array([0.0, 0.0, 0.15])
 N_DROP_SETTLE = 1500
 
+# 收攏階段安全煞車：物體在收攏中被 gravcomp 設成無重力（見 phase 4），手掌
+# 也完全沒有釘住（讓接觸反作用力可以自然把手掌帶回貼合的姿勢）。當取樣到
+# 不好的逼近角度、一開始就疊了大量重疊接觸時，兩邊都沒有重量可以把自己拉
+# 回原位，解算器硬解開重疊的力道會把手跟物體一起彈飛（曾經量到彈到 2 公尺
+# 高、物體最終落點離原位 1 公尺遠）。這兩個閾值讓我們在爆衝的第一時間就
+# 中止收攏，而不是放任它們在空中糾纏完剩下幾百步才在最後才判定失敗。
+MAX_OBJ_SPEED_MPS = 2.0     # 物體瞬時速度超過這個值，基本上就是被彈飛，不是手指正常推擠
+DIVERGE_DISP_M = 0.5        # 物體位移超過這個值，判定抓取已經失控
+
+# 手指「一碰到物體就鎖定角度、不再繼續收攏」的機制，原本鎖了就不會再解開；
+# 但如果那次接觸只是逼近／收攏過程中的一次擦過（例如收攏初期的重疊接觸被
+# 解算器推開後，該手指其實根本沒真的貼住物體），永久鎖定會讓那根手指停在
+# 半彎的角度、看起來像「沒有做抓握動作」。連續這麼多步都偵測不到接觸，就
+# 視為那次接觸只是擦過去，解除鎖定、讓它繼續往收攏目標靠攏。
+UNLOCK_AFTER_STEPS = 30
+
 
 def build_single_object_scene(assets_dir: Path, obj_name: str) -> Path:
     safe = obj_name.replace("-", "_")
@@ -190,6 +206,24 @@ def hand_touches_object(model, data, obj_body_id) -> bool:
     return False
 
 
+def hand_touches_floor(model, data, floor_gid: int, obj_body_id: int) -> bool:
+    """手（不是物體本身，物體貼在地板上是正常狀態）是否碰到地板。用來在
+    逼近階段擋掉「取樣點/角度太貼近地板」的取樣結果——這種取樣會讓手掌沿
+    著逼近方向走到一半就整個插進地板，收攏階段一開始就疊出大量重疊接觸，
+    是「手跟物體一起被彈飛」的主要成因之一。"""
+    for i in range(data.ncon):
+        c = data.contact[i]
+        b1, b2 = model.geom_bodyid[c.geom1], model.geom_bodyid[c.geom2]
+        other = None
+        if c.geom1 == floor_gid:
+            other = b2
+        elif c.geom2 == floor_gid:
+            other = b1
+        if other is not None and other not in (0, obj_body_id):
+            return True
+    return False
+
+
 def step(model, data, viewer=None):
     mujoco.mj_step(model, data)
     if viewer is not None:
@@ -207,6 +241,7 @@ def run(model, data, obj_name: str, rng: np.random.Generator, viewer=None) -> bo
     obj_jid = mujoco.mj_name2id(model, mujoco.mjtObj.mjOBJ_JOINT, f"{safe}_free")
     obj_qadr = model.jnt_qposadr[obj_jid]
     obj_vadr = model.jnt_dofadr[obj_jid]
+    floor_gid = mujoco.mj_name2id(model, mujoco.mjtObj.mjOBJ_GEOM, "floor")
 
     free_jid = mujoco.mj_name2id(model, mujoco.mjtObj.mjOBJ_JOINT, "hand_free")
     palm_qadr = model.jnt_qposadr[free_jid]
@@ -277,6 +312,13 @@ def run(model, data, obj_name: str, rng: np.random.Generator, viewer=None) -> bo
         set_palm(p_world + n_world * offset)
         step(model, data, viewer)
         data.qvel[palm_vadr:palm_vadr + 6] = 0.0
+        # 取樣點/法向量太貼近地板時，手掌沿著逼近方向走到一半，還沒真的碰到
+        # 物體，指節或手掌本身就已經插進地板——這種取樣點直接判失敗，不要讓
+        # 它帶著一身地板穿透量進入收攏階段（那是後面「手跟物體一起被彈飛」
+        # 的主要成因之一，見 MAX_OBJ_SPEED_MPS/DIVERGE_DISP_M 旁的說明）。
+        if hand_touches_floor(model, data, floor_gid, obj_bid):
+            print("FAIL: hand hit the floor while approaching (sampled point/angle too close to the floor)")
+            return False
         if hand_touches_object(model, data, obj_bid):
             contact_step = i
             break
@@ -305,29 +347,54 @@ def run(model, data, obj_name: str, rng: np.random.Generator, viewer=None) -> bo
         for i, fname in enumerate(FINGERS.keys(), start=1)
     }
     locked = {fname: False for fname in FINGERS}
+    miss_streak = {fname: 0 for fname in FINGERS}  # 鎖定後，連續幾步偵測不到接觸
     current_ctrl = pregrasp_ctrl.copy()
     model.body_gravcomp[obj_bid] = 1.0
+    diverged = False
     for step_i in range(N_CLOSE_STEPS):
         frac = min(1.0, (step_i + 1) / N_CLOSE_STEPS)
         for fname, jnames in FINGERS.items():
-            if locked[fname]:
-                continue
             touched = any(
                 (model.geom_bodyid[c.geom1] == obj_bid and model.geom_bodyid[c.geom2] in finger_body_ids[fname])
                 or (model.geom_bodyid[c.geom2] == obj_bid and model.geom_bodyid[c.geom1] in finger_body_ids[fname])
                 for c in data.contact[:data.ncon]
             )
-            if touched:
+            if locked[fname]:
+                if touched:
+                    miss_streak[fname] = 0
+                else:
+                    miss_streak[fname] += 1
+                    if miss_streak[fname] >= UNLOCK_AFTER_STEPS:
+                        # 鎖定之後一直偵測不到接觸，代表當初那次接觸只是擦過去，
+                        # 不是真的貼住物體——解除鎖定，讓它繼續往收攏目標靠攏。
+                        locked[fname] = False
+                if locked[fname]:
+                    continue
+            elif touched:
                 locked[fname] = True
+                miss_streak[fname] = 0
                 continue
             for jn in jnames:
                 _jid, aid = idx[jn]
                 current_ctrl[aid] = pregrasp_ctrl[aid] + frac * (close_ctrl[aid] - pregrasp_ctrl[aid])
         data.ctrl[:] = current_ctrl
         step(model, data, viewer)
-        if all(locked.values()):
+
+        # 安全煞車：物體被單一步的重疊接觸力瞬間彈飛時，速度或位移會在幾步
+        # 內就爆衝超標，這裡當場中止收攏，不要放任手跟物體繼續在空中糾纏
+        # 剩下的幾百步（見 MAX_OBJ_SPEED_MPS/DIVERGE_DISP_M 的說明）。
+        obj_speed = np.linalg.norm(data.qvel[obj_vadr:obj_vadr + 3])
+        obj_disp = np.linalg.norm(data.qpos[obj_qadr:obj_qadr + 3] - obj_pos)
+        if not np.all(np.isfinite(data.qpos)) or obj_speed > MAX_OBJ_SPEED_MPS or obj_disp > DIVERGE_DISP_M:
+            diverged = True
+            print(f"[diag] closing aborted early at step {step_i}: object speed={obj_speed:.2f} m/s, "
+                  f"displaced {obj_disp:.3f} m from pre-close position")
             break
     print(f"[diag] fingers that locked on contact before full close: {[f for f, v in locked.items() if v]}")
+
+    if diverged:
+        print("FAIL: grasp diverged during closing (object got launched by an over-penetrating contact)")
+        return False
 
     # ---- diagnostics: what actually happened during closing -------------
     contact_bodies, max_pen = set(), 0.0
@@ -355,12 +422,11 @@ def run(model, data, obj_name: str, rng: np.random.Generator, viewer=None) -> bo
     close_pos = data.qpos[obj_qadr:obj_qadr + 3].copy()
     print(f"post-close object pos={close_pos.round(3)} (pre-close was {p_world.round(3)}-ish region)")
 
-    # A bad grasp can drive many hand geoms into the object at once and
-    # blow up the contact solver -- qpos stays finite but the object ends
-    # up meters away. Bail before the lift/push tests waste time on an
-    # already-obviously-failed candidate.
-    if not np.all(np.isfinite(data.qpos)) or np.linalg.norm(close_pos - obj_pos) > 0.5:
-        print("FAIL: grasp diverged (object displaced >0.5m during closing)")
+    # 收攏迴圈裡已經有同一組閾值的即時安全煞車了（見上面 diverged 那段），
+    # 這裡是第二道防線，防止 phase 5 的「恢復重力、讓抓取吃到重量」這 300
+    # 步和解過程中才發生類似的失控。
+    if not np.all(np.isfinite(data.qpos)) or np.linalg.norm(close_pos - obj_pos) > DIVERGE_DISP_M:
+        print(f"FAIL: grasp diverged (object displaced >{DIVERGE_DISP_M}m while settling)")
         return False
 
     # ---- phase 6: lift test -----------------------------------------------
