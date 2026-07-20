@@ -11,24 +11,32 @@ One deliberate deviation from plan.md's pseudocode: it computes
 mesh surface, so `p - n*d` walks *into* the object, not away from it. That
 contradicts "手掌...退開" (palm backs away). This script uses the
 physically-correct `p + n*d` (retreat along the outward normal) and then
-approaches along `-n`.
+approaches along `approach_dir` (see below -- not simply `-n` anymore).
 
 Pipeline for one attempt:
   1. Object free-falls onto the floor and settles (as in 07) to get a
      real resting pose; the hand holds a static PREGRASP shape throughout
      so it doesn't disturb anything before the attempt starts.
-  2. Sample point `p` + outward normal `n` on the object's *visual* mesh
-     (not the convex collision hulls -- see 06_build_objects.py for why),
-     transformed into world coordinates via the object's current pose.
-  3. Palm is teleported (qpos write, no physics) to `p + n*d`
-     (d ~ U(0.08, 0.15)), oriented so its local +Z (== the palm_center
-     site direction, i.e. "toward the fingers") points along -n, plus a
-     random roll about that axis for wrist variety.
+  2. sample_grasp_point() picks point `p` + outward normal `n` on the
+     object's *visual* mesh (not the convex collision hulls -- see
+     06_build_objects.py for why) via antipodal sampling, not plain
+     uniform-random: candidates are rejected unless a ray cast from `p`
+     along `-n` hits an opposing wall within the hand's graspable width
+     and roughly antipodal to `n`, and unless `p` clears the floor by a
+     margin. `approach_dir` is `-n` blended slightly toward the object's
+     centroid (CENTROID_BLEND) so the palm aims into the bulk of the
+     object rather than skimming its surface tangentially.
+  3. Palm is teleported (qpos write, no physics) to `p + approach_dir*-d`
+     i.e. retreated by `d` along `-approach_dir` (d ~ U(0.19, 0.26)),
+     oriented so its local +Z (== the palm_center site direction, i.e.
+     "toward the fingers") points along `approach_dir`, plus a random
+     roll about that axis for wrist variety.
   4. Fingers pre-shape to PREGRASP + noise.
-  5. Palm is walked forward in small kinematic steps along -n until any
-     hand geom touches the object, or the budget `d` runs out with no
-     contact -- most random (p, n, d, roll) samples miss entirely, so
-     bailing out here early matters for throughput once this is batched.
+  5. Palm is walked forward in small kinematic steps along `approach_dir`
+     until any hand geom touches the object, or the hand hits the floor
+     first (bad sample, bail out), or the budget `d` runs out with no
+     contact -- antipodal filtering cuts down on outright misses, but
+     bailing out here early still matters for throughput once batched.
   6. Finger actuators are commanded to CLOSE_FRACTION and the sim runs
      under physics (palm is no longer teleported, real dynamics take
      over) with the object's gravity compensated, so the fingers can
@@ -74,6 +82,16 @@ CLOSE_FRACTION = 0.85
 # immediately on essentially every attempt.
 D_MIN, D_MAX = 0.19, 0.26
 N_APPROACH_STEPS = 150
+
+# 逼近階段「碰到就停」的安全煞車，改成看穿透量/接觸點數，而不是有碰到就停。
+# 原因：預張開時五指伸出的長度不一（中指最長、大拇指最短），逼近時最先碰
+# 到物體的常常只是「跑最遠的那根手指」自己先擦到，如果一碰到就整個停止
+# 逼近，手掌跟其他比較短的手指根本還沒進到能碰到物體的範圍內，收攏時自
+# 然只有那一根手指鎖得住、其餘手指全部撲空——這正是先前很多次抓取只鎖到
+# 一根手指、拿起測試 0cm 的主因。改成只要還沒撞出明顯穿透/沒撞到一大堆
+# 點，就讓手掌繼續往取樣點靠，直到真的撞太深、或走到取樣點本身為止。
+MAX_APPROACH_PENETRATION_M = 0.01   # 逼近中允許的最大穿透深度
+MAX_APPROACH_CONTACTS = 30          # 逼近中允許的最大同時接觸點數
 N_CLOSE_STEPS = 800
 N_POSTCLOSE_SETTLE = 300
 LIFT_HEIGHT = 0.10          # lift test: raise the palm 10cm, object must follow
@@ -86,6 +104,18 @@ SUCCESS_DISP_M = 0.02
 
 DROP_POS = np.array([0.0, 0.0, 0.15])
 N_DROP_SETTLE = 1500
+
+# 取樣點篩選（對蹠點取樣，antipodal sampling）：純粹在表面均勻隨機取一點，
+# 完全不管對面有沒有東西可以夾、夾的寬度合不合理，是抓取成功率趨近於 0
+# 的主因之一。做法：一次批次取 N_SAMPLE_CANDIDATES 個候選點，對每個點沿著
+# 內法向量往物體內部打一條射線，找到對面那道「牆」——如果牆的法向量跟候選
+# 點大致相反、而且兩者間距落在手掌環抱得住的寬度範圍內，才是合格的候選。
+N_SAMPLE_CANDIDATES = 300
+MIN_GRASP_WIDTH_M = 0.02     # 太薄（邊緣、把手邊邊）夾不到什麼東西
+MAX_GRASP_WIDTH_M = 0.12     # 對應手指展開後大約能環抱的直徑，太粗根本包不住
+ANTIPODAL_COS_THRESH = -0.5  # 兩邊法向量夾角要大於 120 度，才算真的「對面有牆」
+FLOOR_CLEARANCE_M = 0.03     # 候選點世界座標高度至少要離地板這麼遠
+CENTROID_BLEND = 0.2         # 逼近方向朝物體重心微調的混合權重（0=完全用表面法向量）
 
 # 收攏階段安全煞車：物體在收攏中被 gravcomp 設成無重力（見 phase 4），手掌
 # 也完全沒有釘住（讓接觸反作用力可以自然把手掌帶回貼合的姿勢）。當取樣到
@@ -186,6 +216,73 @@ def hand_pose_ctrl(model, idx, fraction, rng=None, noise_std=0.0):
     return ctrl
 
 
+def sample_grasp_point(mesh, obj_pos: np.ndarray, obj_rot: np.ndarray, rng: np.random.Generator):
+    """在物體表面找一個「對面真的有東西可以夾」的取樣點，取代單純均勻隨機
+    取一個表面點。
+
+    做法是傳統幾何抓取法裡最便宜的一招——對蹠點取樣（antipodal
+    sampling）：批次取一堆候選點，對每個點沿著內法向量往物體內部打一條
+    射線，找到對面那道「牆」。只有當牆的法向量跟候選點的法向量大致相反
+    （代表真的是兩片相對的表面，不是切線擦過去），而且兩者間距落在手掌
+    環抱得住的寬度範圍內，才算合格候選；還會濾掉太貼近地板的點（逼近時
+    很容易撞地板，見 hand_touches_floor）。純隨機取樣完全不管這些，是先
+    前抓取成功率趨近於 0 的主因之一。
+
+    順便：逼近方向不是死板地沿著表面法向量走，而是朝物體重心的方向微調
+    一點（CENTROID_BLEND），讓手掌更容易對準物體「中心厚實的地方」，而不
+    是貼著表面切線滑過去。
+
+    回傳 (p_world, n_world, approach_dir)；找不到合格候選點時（例如形狀
+    太不規則，如香蕉的彎曲側面）退回單純隨機取一點，不會讓整次嘗試卡死。
+    """
+    seed = int(rng.integers(0, 2**31 - 1))  # 順便修掉 trimesh 取樣不吃 rng 的可重現性問題
+    p_local, face_idx = trimesh.sample.sample_surface(mesh, N_SAMPLE_CANDIDATES, seed=seed)
+    n_local = mesh.face_normals[face_idx]
+
+    eps = 1e-4  # 起點稍微往內縮一點，避免射線一開始就打到自己所在的那個面
+    origins = p_local - n_local * eps
+    directions = -n_local
+    locations, index_ray, index_tri = mesh.ray.intersects_location(origins, directions)
+
+    # 同一條射線可能穿過好幾個面，只留「最近」的那個當作對面的牆
+    best_dist, best_tri = {}, {}
+    for loc, ray_i, tri_i in zip(locations, index_ray, index_tri):
+        dist = float(np.linalg.norm(loc - origins[ray_i]))
+        if ray_i not in best_dist or dist < best_dist[ray_i]:
+            best_dist[ray_i] = dist
+            best_tri[ray_i] = tri_i
+
+    centroid_world = obj_pos + obj_rot @ mesh.center_mass
+
+    def build(i: int):
+        p_w = obj_pos + obj_rot @ p_local[i]
+        n_w = obj_rot @ n_local[i]
+        n_w = n_w / np.linalg.norm(n_w)
+        to_centroid = centroid_world - p_w
+        to_centroid = to_centroid / (np.linalg.norm(to_centroid) + 1e-9)
+        approach_dir = (1 - CENTROID_BLEND) * (-n_w) + CENTROID_BLEND * to_centroid
+        approach_dir = approach_dir / np.linalg.norm(approach_dir)
+        return p_w, n_w, approach_dir
+
+    valid = []
+    for ray_i, tri_i in best_tri.items():
+        width = best_dist[ray_i]
+        if not (MIN_GRASP_WIDTH_M <= width <= MAX_GRASP_WIDTH_M):
+            continue
+        if np.dot(n_local[ray_i], mesh.face_normals[tri_i]) >= ANTIPODAL_COS_THRESH:
+            continue
+        p_w, _, _ = build(ray_i)
+        if p_w[2] < FLOOR_CLEARANCE_M:
+            continue
+        valid.append(ray_i)
+
+    if valid:
+        return build(int(rng.choice(valid)))
+
+    print("[diag] no antipodal candidate found, falling back to a plain random surface point")
+    return build(int(rng.integers(0, N_SAMPLE_CANDIDATES)))
+
+
 def rotation_local_z_to(direction: np.ndarray, roll: float) -> Rotation:
     """Rotation R such that R @ [0,0,1] == direction, with an extra `roll`
     radians about that same axis (applied in the local frame first)."""
@@ -231,7 +328,34 @@ def step(model, data, viewer=None):
         time.sleep(0.002)
 
 
-def run(model, data, obj_name: str, rng: np.random.Generator, viewer=None) -> bool:
+def run(model, data, obj_name: str, rng: np.random.Generator, viewer=None) -> dict:
+    """跑一次完整的抓取嘗試，回傳這次嘗試的結果字典（給批次收集腳本用）：
+
+        {
+          "object": obj_name,
+          "success": bool,
+          "fail_reason": str | None,   # 失敗時是哪個階段擋下來的；成功時是 None
+          "sample_p": [x,y,z] | None,  # 取樣到的抓取點（世界座標）
+          "sample_n": [x,y,z] | None,  # 該點法向量
+          "object_pose": {"pos": [...], "quat": [wxyz]} | None,  # 只有成功才填
+          "palm_pose":   {"pos": [...], "quat": [wxyz]} | None,  # 抓取當下、推力測試前
+          "joint_angles": [...20 個手指關節角 (rad)...] | None,
+        }
+
+    後三個欄位只有 success=True 時才會填，格式對應 doc/plan.md 階段 3 要求
+    的訓練資料（object_pose／palm_pose／joint_angles）。
+    """
+    result = {
+        "object": obj_name,
+        "success": False,
+        "fail_reason": None,
+        "sample_p": None,
+        "sample_n": None,
+        "object_pose": None,
+        "palm_pose": None,
+        "joint_angles": None,
+    }
+
     idx = joint_index(model)
     pregrasp_ctrl = hand_pose_ctrl(model, idx, PREGRASP_FRACTION, rng, PREGRASP_NOISE_STD)
     close_ctrl = hand_pose_ctrl(model, idx, CLOSE_FRACTION)
@@ -274,26 +398,27 @@ def run(model, data, obj_name: str, rng: np.random.Generator, viewer=None) -> bo
     obj_rot = data.xmat[obj_bid].reshape(3, 3).copy()
     print(f"object settled at {obj_pos.round(3)}")
 
-    # ---- phase 2: sample a surface point + outward normal ---------------
+    # ---- phase 2: 用對蹠點取樣找一個「環抱得住」的表面點 -------------------
     mesh = trimesh.load(Path(__file__).resolve().parents[1]
                          / "assets" / "objects" / obj_name / "visual.stl", force="mesh")
-    p_local, face_idx = trimesh.sample.sample_surface(mesh, 1)
-    n_local = mesh.face_normals[face_idx[0]]
-    p_world = obj_pos + obj_rot @ p_local[0]
-    n_world = obj_rot @ n_local
-    n_world = n_world / np.linalg.norm(n_world)
+    p_world, n_world, approach_dir = sample_grasp_point(mesh, obj_pos, obj_rot, rng)
+    result["sample_p"] = p_world.tolist()
+    result["sample_n"] = n_world.tolist()
 
     d = rng.uniform(D_MIN, D_MAX)
     roll = rng.uniform(0.0, 2 * np.pi)
     print(f"sampled p={p_world.round(3)} n={n_world.round(3)} d={d:.3f} roll={np.degrees(roll):.0f}deg")
 
-    approach_dir = -n_world  # palm walks toward the surface along -n
+    # 手掌姿態跟著 approach_dir 走（已經混入朝重心微調的方向，不是死板的
+    # -n_world），逼近路徑的位置也要用同一條軸，兩者才會一致。
     R = rotation_local_z_to(approach_dir, roll)
     quat_xyzw = R.as_quat()
     palm_quat = np.array([quat_xyzw[3], quat_xyzw[0], quat_xyzw[1], quat_xyzw[2]])
     R_mat = R.as_matrix()
 
-    def set_palm(center_pos):
+    def set_palm(offset):
+        # offset=d 時退到最外側，offset=0 時剛好落在取樣點 p_world 上
+        center_pos = p_world - approach_dir * offset
         body_pos = center_pos - R_mat @ np.array([0.0, 0.0, PALM_HEIGHT])
         data.qpos[palm_qadr:palm_qadr + 3] = body_pos
         data.qpos[palm_qadr + 3:palm_qadr + 7] = palm_quat
@@ -309,7 +434,7 @@ def run(model, data, obj_name: str, rng: np.random.Generator, viewer=None) -> bo
     contact_step = None
     for i in range(N_APPROACH_STEPS + 1):
         offset = d * (1.0 - i / N_APPROACH_STEPS)
-        set_palm(p_world + n_world * offset)
+        set_palm(offset)
         step(model, data, viewer)
         data.qvel[palm_vadr:palm_vadr + 6] = 0.0
         # 取樣點/法向量太貼近地板時，手掌沿著逼近方向走到一半，還沒真的碰到
@@ -318,14 +443,26 @@ def run(model, data, obj_name: str, rng: np.random.Generator, viewer=None) -> bo
         # 的主要成因之一，見 MAX_OBJ_SPEED_MPS/DIVERGE_DISP_M 旁的說明）。
         if hand_touches_floor(model, data, floor_gid, obj_bid):
             print("FAIL: hand hit the floor while approaching (sampled point/angle too close to the floor)")
-            return False
+            result["fail_reason"] = "hit_floor"
+            return result
         if hand_touches_object(model, data, obj_bid):
             contact_step = i
-            break
+            # 不是一碰到就整個停止逼近：只要目前的接觸還不算「撞太深/撞
+            # 太多點」，就讓手掌繼續往取樣點靠，好讓比較短的手指跟手掌本
+            # 身也有機會進到能碰到物體的範圍內，而不是被最先擦到的那根
+            # 手指卡住（見上面 MAX_APPROACH_PENETRATION_M 的說明）。
+            pen = min(
+                (c.dist for c in data.contact[:data.ncon]
+                 if obj_bid in (model.geom_bodyid[c.geom1], model.geom_bodyid[c.geom2])),
+                default=0.0,
+            )
+            if -pen > MAX_APPROACH_PENETRATION_M or data.ncon > MAX_APPROACH_CONTACTS:
+                break
 
     if contact_step is None:
         print("FAIL: no contact within approach budget")
-        return False
+        result["fail_reason"] = "no_contact"
+        return result
     print(f"contact at approach step {contact_step}/{N_APPROACH_STEPS}")
 
     # ---- phase 4: close fingers gradually, each stops on its own contact -
@@ -394,7 +531,8 @@ def run(model, data, obj_name: str, rng: np.random.Generator, viewer=None) -> bo
 
     if diverged:
         print("FAIL: grasp diverged during closing (object got launched by an over-penetrating contact)")
-        return False
+        result["fail_reason"] = "diverged_closing"
+        return result
 
     # ---- diagnostics: what actually happened during closing -------------
     contact_bodies, max_pen = set(), 0.0
@@ -427,7 +565,8 @@ def run(model, data, obj_name: str, rng: np.random.Generator, viewer=None) -> bo
     # 步和解過程中才發生類似的失控。
     if not np.all(np.isfinite(data.qpos)) or np.linalg.norm(close_pos - obj_pos) > DIVERGE_DISP_M:
         print(f"FAIL: grasp diverged (object displaced >{DIVERGE_DISP_M}m while settling)")
-        return False
+        result["fail_reason"] = "diverged_settling"
+        return result
 
     # ---- phase 6: lift test -----------------------------------------------
     # The object is still resting on the floor at this point. Pushing it
@@ -451,7 +590,8 @@ def run(model, data, obj_name: str, rng: np.random.Generator, viewer=None) -> bo
     print(f"lift test: object rose {rise * 100:.1f}cm (commanded {LIFT_HEIGHT * 100:.0f}cm)")
     if rise < LIFT_SUCCESS_FRACTION * LIFT_HEIGHT:
         print("FAIL: object was not lifted with the hand (never actually grasped)")
-        return False
+        result["fail_reason"] = "not_lifted"
+        return result
 
     palm_hold_pose = data.qpos[palm_qadr:palm_qadr + 7].copy()
     for _ in range(N_POSTLIFT_SETTLE):
@@ -460,6 +600,19 @@ def run(model, data, obj_name: str, rng: np.random.Generator, viewer=None) -> bo
         data.qvel[palm_vadr:palm_vadr + 6] = 0.0
 
     ref_pos = data.qpos[obj_qadr:obj_qadr + 3].copy()
+
+    # 拿起測試通過，代表這是一次「確實握住物體」的抓取——把這個當下的姿態
+    # 記下來，等一下不管推力測試過不過，都是後續要拿去訓練用的候選資料
+    # （doc/plan.md 階段 3 的 object_pose／palm_pose／joint_angles 格式）。
+    result["object_pose"] = {
+        "pos": ref_pos.tolist(),
+        "quat": data.qpos[obj_qadr + 3:obj_qadr + 7].tolist(),
+    }
+    result["palm_pose"] = {
+        "pos": palm_hold_pose[:3].tolist(),
+        "quat": palm_hold_pose[3:].tolist(),
+    }
+    result["joint_angles"] = [float(data.qpos[model.jnt_qposadr[jid]]) for jid, _aid in idx.values()]
 
     # ---- phase 7: 6-direction perturbation test, object now airborne -----
     directions = np.array([
@@ -483,7 +636,10 @@ def run(model, data, obj_name: str, rng: np.random.Generator, viewer=None) -> bo
         print(f"  push {dvec.astype(int)}: max_disp={max_disp:.4f} m  {'OK' if ok else 'FAIL'}")
 
     print(f"\n{'SUCCESS' if success else 'FAIL'}: grasp {'held' if success else 'did not hold'} under perturbation")
-    return success
+    result["success"] = success
+    if not success:
+        result["fail_reason"] = "unstable_under_push"
+    return result
 
 
 def main() -> None:

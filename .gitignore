@@ -9,6 +9,7 @@ delto_m_ros2/
 # Runtime artifacts
 MUJOCO_LOG.TXT
 assets/_scene_*.xml
+logs/
 
 # Editor / OS cruft
 .DS_Store
