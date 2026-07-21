@@ -221,6 +221,7 @@ def fuse_views_tsdf(
     voxel_length: float,
     sdf_trunc: float,
     depth_trunc: float,
+    small_cluster_ratio: float = 0.1,
 ) -> o3d.geometry.TriangleMesh:
     """用每一幀的 marker 姿態，把深度影像逐幀融合成一個封閉 mesh。"""
     volume = o3d.pipelines.integration.ScalableTSDFVolume(
@@ -248,15 +249,49 @@ def fuse_views_tsdf(
     if len(mesh.triangles) == 0:
         raise RuntimeError("TSDF 融合後沒有產生任何三角形，請確認每個視角都有成功去背、深度沒有大片缺失")
 
-    # TSDF 融合常會在物體邊緣留下背景漏進來的小碎片，只留下最大的連通面。
+    # TSDF 融合常會在物體邊緣留下背景漏進來的小碎片。原本只留「最大」的
+    # 那一塊，但邊緣有時會黏出一片跟主體「連在一起」的插片（你圖上邊緣那些
+    # 方形凸出），或飄出好幾塊中等大小的碎片。這裡改成：先算每一塊連通面的
+    # 三角形數，凡是小於「最大塊 * small_cluster_ratio」的塊全部丟掉，一次
+    # 清掉主體以外所有大大小小的碎片，只保留主體本身。
     triangle_clusters, cluster_n_triangles, _ = mesh.cluster_connected_triangles()
     triangle_clusters = np.asarray(triangle_clusters)
     cluster_n_triangles = np.asarray(cluster_n_triangles)
-    largest_cluster_idx = int(cluster_n_triangles.argmax())
-    triangles_to_remove = triangle_clusters != largest_cluster_idx
+    largest_n = int(cluster_n_triangles.max())
+    keep_cluster = cluster_n_triangles >= largest_n * small_cluster_ratio
+    triangles_to_remove = np.logical_not(keep_cluster[triangle_clusters])
     mesh.remove_triangles_by_mask(triangles_to_remove)
     mesh.remove_unreferenced_vertices()
 
+    return mesh
+
+
+def smooth_mesh(
+    mesh: o3d.geometry.TriangleMesh,
+    iterations: int,
+    method: str = "taubin",
+) -> o3d.geometry.TriangleMesh:
+    """
+    深度相機在物體表面本來就有逐幀量測雜訊，TSDF 融合後表面會殘留一層淺淺
+    的波浪起伏（不是尖刺，是緩緩的凹凸）。這裡對融合出來的 mesh 做網格平滑，
+    把這層雜訊抹掉，讓光滑物體（耳機殼這類）看起來更貼近真實。
+
+    method:
+      "taubin"  —— Taubin 平滑。一般首選：它會交替做正向/反向平滑，能磨掉
+                   高頻雜訊又「幾乎不收縮體積」，物體不會越磨越小。想要光滑
+                   又不想失真時用這個。
+      "laplacian" —— 標準 Laplacian 平滑，磨得更兇但會讓物體整體縮水、稜角
+                   變鈍。只有在 taubin 還不夠平、且你不在意輕微縮水時才用。
+
+    iterations 就是磨幾遍，越大越平滑也越鈍。0 代表完全不平滑（維持原樣）。
+    """
+    if iterations <= 0:
+        return mesh
+    if method == "laplacian":
+        mesh = mesh.filter_smooth_laplacian(number_of_iterations=iterations)
+    else:
+        mesh = mesh.filter_smooth_taubin(number_of_iterations=iterations)
+    mesh.compute_vertex_normals()
     return mesh
 
 
@@ -560,8 +595,16 @@ def run_multiview_pipeline(views: list, args, obj_dir: Path, safe_name: str) -> 
         raise RuntimeError("排除掉姿態異常的視角後剩不到 3 個，沒辦法融合，請重新拍攝並確保 marker 全程清楚可見")
 
     print("TSDF 融合中...")
-    mesh_o3d = fuse_views_tsdf(views, args.tsdf_voxel_length, args.tsdf_sdf_trunc, args.depth_trunc)
+    mesh_o3d = fuse_views_tsdf(
+        views, args.tsdf_voxel_length, args.tsdf_sdf_trunc, args.depth_trunc,
+        small_cluster_ratio=args.small_cluster_ratio,
+    )
     o3d.io.write_triangle_mesh(str(debug_dir / "fused_mesh_world_frame.ply"), mesh_o3d)
+
+    if args.smooth_iterations > 0:
+        print(f"表面平滑中（{args.smooth_method}，{args.smooth_iterations} 遍）...")
+        mesh_o3d = smooth_mesh(mesh_o3d, args.smooth_iterations, args.smooth_method)
+        o3d.io.write_triangle_mesh(str(debug_dir / "fused_mesh_smoothed.ply"), mesh_o3d)
 
     if len(mesh_o3d.triangles) > args.max_visual_triangles:
         mesh_o3d = mesh_o3d.simplify_quadric_decimation(target_number_of_triangles=args.max_visual_triangles)
@@ -834,6 +877,15 @@ def main():
                               "（融合出來的 mesh 底部如果有一圈貼著地板往外攤開的薄殼/裙擺，調大這個值）")
     parser.add_argument("--tsdf_voxel_length", type=float, default=0.003, help="TSDF 融合體素大小（公尺）")
     parser.add_argument("--tsdf_sdf_trunc", type=float, default=0.015, help="TSDF 截斷距離（公尺）")
+    parser.add_argument("--smooth_iterations", type=int, default=10,
+                         help="融合後對 mesh 做幾遍網格平滑，抹掉深度相機殘留的表面波浪雜訊；"
+                              "0=完全不平滑，光滑物體（耳機殼）建議 10~30，數字越大越平滑也越鈍。"
+                              "rebuild 就會生效，可以反覆試")
+    parser.add_argument("--smooth_method", type=str, default="taubin", choices=["taubin", "laplacian"],
+                         help="平滑方法：taubin 幾乎不縮體積（首選）；laplacian 磨更兇但物體會縮水")
+    parser.add_argument("--small_cluster_ratio", type=float, default=0.1,
+                         help="融合後清碎片：連通面三角形數小於（最大塊 x 這個比例）的碎片全丟掉；"
+                              "調大清得更兇（邊緣插片、飄出的小塊會被清掉），調太大可能連物體一部分都砍掉")
     parser.add_argument("--max_visual_triangles", type=int, default=40000)
     parser.add_argument("--max_hulls", type=int, default=bo.MAX_HULLS)
     parser.add_argument("--min_views", type=int, default=6, help="至少要有幾個視角才能建置（建議實際拍 8~16 個）")

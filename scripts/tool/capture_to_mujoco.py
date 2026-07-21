@@ -71,6 +71,10 @@ def _lazy_import_trimesh():
     import trimesh
     return trimesh
 
+def _lazy_import_earcut():
+    import mapbox_earcut
+    return mapbox_earcut
+
 def _lazy_import_rs():
     import pyrealsense2 as rs
     return rs
@@ -659,47 +663,127 @@ def reject_pose_outliers(records: List[ViewRecord], max_jump_deg: float):
 # 5. mesh 後處理 + MuJoCo 物件輸出
 # ===========================================================================
 
-def cap_bottom_hole(tri_mesh):
-    """物件貼轉盤那面永遠沒被拍到，會留一個洞。找邊界迴圈扇形補一塊平面蓋住。"""
-    edges = tri_mesh.edges_sorted
-    view = edges.view([("", edges.dtype)] * 2).ravel()
-    _, inv, cnt = np.unique(view, return_inverse=True, return_counts=True)
-    boundary = edges[cnt[inv] == 1]
-    if len(boundary) == 0:
-        return tri_mesh
-    adj = {}
-    for a, b in boundary:
-        adj.setdefault(int(a), []).append(int(b))
-        adj.setdefault(int(b), []).append(int(a))
-    trimesh = _lazy_import_trimesh()
-    verts = list(tri_mesh.vertices)
-    faces = [tuple(f) for f in tri_mesh.faces]
+def _extract_boundary_loops(mesh, max_loop_len=600):
+    """
+    用「有向邊」走出每個洞的邊界迴圈：一個洞的邊界在原始 mesh 裡本來就是
+    唯一一條有向路徑（每個邊界頂點恰好一進一出），順著走不會在多個洞共
+    用某個頂點時走錯路，方向也直接記錄了原始 mesh 期待的環繞方向，補洞時
+    才能正確判斷新三角形要不要翻面（見 cap_bottom_hole）。
+    大迴圈（頂點數 > max_loop_len）代表這根本不是一個正常的洞、而是破碎
+    幾何，直接跳過不補比硬湊一個巨大補丁好。
+    """
+    edges = mesh.edges
+    edges_sorted = np.sort(edges, axis=1)
+    n_vertices = len(mesh.vertices)
+    key = edges_sorted[:, 0].astype(np.int64) * (n_vertices + 1) + edges_sorted[:, 1]
+    _, inverse, counts = np.unique(key, return_inverse=True, return_counts=True)
+    boundary_directed = edges[counts[inverse] == 1]
+
+    start_map = {}
+    for u, v in boundary_directed:
+        start_map.setdefault(int(u), []).append(int(v))
+
     visited = set()
-    for a0, b0 in boundary:
-        a0, b0 = int(a0), int(b0)
-        key = (min(a0, b0), max(a0, b0))
-        if key in visited:
+    loops = []
+    n_skipped = 0
+    for u0, v0 in boundary_directed:
+        u0, v0 = int(u0), int(v0)
+        if (u0, v0) in visited:
             continue
-        loop = [a0, b0]; visited.add(key); closed = False
-        for _ in range(len(boundary) + 2):
-            cur, prev = loop[-1], loop[-2]
-            nbrs = [n for n in adj.get(cur, []) if n != prev]
-            if not nbrs:
+        loop = [u0]
+        cur, nxt = u0, v0
+        closed = False
+        for _ in range(len(boundary_directed) + 2):
+            visited.add((cur, nxt))
+            loop.append(nxt)
+            if nxt == u0:
+                closed = True
                 break
-            nxt = nbrs[0]
-            if nxt == a0:
-                closed = True; break
-            ek = (min(cur, nxt), max(cur, nxt))
-            if ek in visited:
+            cur = nxt
+            options = [x for x in start_map.get(cur, []) if (cur, x) not in visited]
+            if not options:
                 break
-            visited.add(ek); loop.append(nxt)
-        if not closed or len(loop) < 3:
-            continue
-        c = np.mean([tri_mesh.vertices[i] for i in loop], axis=0)
-        ci = len(verts); verts.append(c)
-        for i in range(len(loop)):
-            faces.append((loop[i], loop[(i + 1) % len(loop)], ci))
-    return trimesh.Trimesh(vertices=np.array(verts), faces=np.array(faces), process=True)
+            nxt = options[0]
+        if closed and len(loop) >= 4:
+            lp = loop[:-1]
+            if len(lp) <= max_loop_len:
+                loops.append(lp)
+            else:
+                n_skipped += 1
+    return loops, n_skipped
+
+
+def cap_bottom_hole(tri_mesh):
+    """
+    物件貼轉盤那面永遠沒被拍到，會留一個洞。找邊界迴圈補一塊面蓋住。
+
+    三角化用 mapbox earcut（業界標準的 2D 多邊形三角化函式庫）：舊版是從
+    邊界迴圈的平均中心點直接扇形連到每個邊界頂點，遇到非凸（凹陷、鋸齒）
+    邊界時，扇形三角形會直接穿過凹陷處，變成一根根從中心射出去的尖刺——
+    這正是「capture_to_mujoco.py 建出來的模型變成一坨尖刺」的根因之一
+    （另一個更大的根因通常是拍攝時物體沒有跟板子一起剛性旋轉，見
+    reconstruct() 裡的打滑偵測警告）。earcut 是正規的 ear clipping，凹
+    多邊形也能正確處理。
+    投影方式：補的是貼著轉盤那塊，轉盤平面就是世界座標系的 XY 平面
+    （板的 Z 軸=世界向上），直接投影到 XY 三角化最符合「假設看不到的那
+    塊是平的」這個前提。
+    真實資料有雜訊，個別迴圈投影後可能局部自相交、補不滿；這裡補一輪後
+    重新掃一次剩下的洞再補，最後一輪對還沒補完的（通常只剩零星小洞）改
+    用最簡單的扇形三角化收尾，確保收斂。
+    """
+    trimesh = _lazy_import_trimesh()
+    earcut = _lazy_import_earcut()
+    mesh = tri_mesh
+
+    for round_i in range(4):
+        loops, n_skipped = _extract_boundary_loops(mesh)
+        if n_skipped:
+            print(f"[警告] {n_skipped} 個邊界迴圈頂點數過多（>600），跳過補洞——"
+                  f"這通常不是真正的洞，而是融合出來的破碎幾何，建議檢查拍攝品質/"
+                  f"重新拍攝，而不是硬補")
+        if not loops:
+            break
+
+        use_fan = round_i == 3  # 最後一輪對剩下的零星小洞用簡單扇形三角化保底收斂
+        verts = mesh.vertices
+        all_new_faces = []
+        for loop in loops:
+            n = len(loop)
+            if use_fan:
+                tris_local = [(0, i, i + 1) for i in range(1, n - 1)]
+            else:
+                proj = verts[loop][:, :2].astype(np.float64)  # 投影到世界 XY（轉盤平面）
+                rings = np.array([n], dtype=np.uint32)
+                try:
+                    idx = earcut.triangulate_float64(proj, rings)
+                except Exception:
+                    idx = np.array([], dtype=np.uint32)
+                if len(idx) == 0 or len(idx) % 3 != 0:
+                    continue  # 這個洞形狀太怪，這輪先跳過，下一輪重新掃描再試
+                tris_local = idx.reshape(-1, 3).tolist()
+
+            # loop[i] -> loop[i+1] 本來就是原始 mesh 既有的邊界有向邊方向，
+            # 新三角形只要有任何一邊跟它方向相同就代表整批三角化的環繞方向
+            # 接反了，要一起翻面（同一批必須一起翻，不能逐三角形各自判斷）。
+            boundary_dir = {(loop[i], loop[(i + 1) % n]) for i in range(n)}
+            flip = any(
+                (loop[a], loop[b]) in boundary_dir or (loop[b], loop[c]) in boundary_dir
+                or (loop[c], loop[a]) in boundary_dir
+                for a, b, c in tris_local
+            )
+            for a, b, c in tris_local:
+                a, b, c = loop[a], loop[b], loop[c]
+                all_new_faces.append((c, b, a) if flip else (a, b, c))
+
+        if not all_new_faces:
+            break
+        mesh = trimesh.Trimesh(
+            vertices=verts, faces=np.vstack([mesh.faces, np.array(all_new_faces)]), process=False,
+        )
+        if mesh.is_watertight:
+            break
+
+    return trimesh.Trimesh(vertices=mesh.vertices, faces=mesh.faces, process=True)
 
 
 def make_collision(tri_mesh, col_dir: Path, name: str, max_hulls: int):
