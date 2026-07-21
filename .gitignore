@@ -13,3 +13,4 @@ logs/
 
 # Editor / OS cruft
 .DS_Store
+assets/
